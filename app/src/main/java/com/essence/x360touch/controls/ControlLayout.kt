@@ -3,7 +3,7 @@ package com.essence.x360touch.controls
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class ElementType { BUTTON, TRIGGER, STICK, DPAD, GYRO_TOGGLE }
+enum class ElementType { BUTTON, TRIGGER, STICK, DPAD, GYRO_TOGGLE, MENU, HIDE_UI }
 
 enum class Binding(val bit: Int) {
     A(Buttons.A), B(Buttons.B), X(Buttons.X), Y(Buttons.Y),
@@ -13,7 +13,10 @@ enum class Binding(val bit: Int) {
     LT(0), RT(0),
     LEFT_STICK(0), RIGHT_STICK(0),
     DPAD(0),
-    GYRO(0)
+    DPAD_UP(Buttons.DPAD_UP), DPAD_DOWN(Buttons.DPAD_DOWN),
+    DPAD_LEFT(Buttons.DPAD_LEFT), DPAD_RIGHT(Buttons.DPAD_RIGHT),
+    GYRO(0),
+    MENU(0), HIDE_UI(0)
 }
 
 /**
@@ -40,24 +43,36 @@ object ControlLayout {
     /** Shooter layout (like PUBG Mobile) with Gears of War actions. Every control stays editable. */
     fun default(): MutableList<ControlElement> = shooter()
 
+    /**
+     * Shooter layout, like the touch HUD of mobile shooters: icon-only circles with a thin outline.
+     * Gears of War mapping (StrategyWiki): RT shoot, LT aim, A cover/run/evade, B melee (hold: chainsaw),
+     * X use, Y look, RB reload (active reload), LB tac-com, R3 zoom, L3 crouch, D-pad weapons.
+     */
     fun shooter(): MutableList<ControlElement> = mutableListOf(
-        ControlElement("ls", ElementType.STICK, Binding.LEFT_STICK, "MOVER", 0.14f, 0.68f, 0.32f),
-        ControlElement("rt", ElementType.TRIGGER, Binding.RT, "DISPARAR", 0.86f, 0.60f, 0.18f),
-        ControlElement("rt_l", ElementType.TRIGGER, Binding.RT, "DISPARAR", 0.08f, 0.30f, 0.11f),
-        ControlElement("lt", ElementType.TRIGGER, Binding.LT, "APUNTAR", 0.95f, 0.36f, 0.12f),
-        ControlElement("a", ElementType.BUTTON, Binding.A, "CUBRIRSE", 0.72f, 0.84f, 0.13f),
-        ControlElement("b", ElementType.BUTTON, Binding.B, "GOLPE", 0.95f, 0.82f, 0.11f),
-        ControlElement("rb", ElementType.BUTTON, Binding.RB, "RECARGAR", 0.70f, 0.56f, 0.10f),
-        ControlElement("x", ElementType.BUTTON, Binding.X, "USAR", 0.58f, 0.42f, 0.10f),
-        ControlElement("y", ElementType.BUTTON, Binding.Y, "MIRAR", 0.80f, 0.18f, 0.09f),
-        ControlElement("r3", ElementType.BUTTON, Binding.R3, "ZOOM", 0.68f, 0.26f, 0.08f),
-        ControlElement("dpad", ElementType.DPAD, Binding.DPAD, "", 0.32f, 0.88f, 0.17f),
-        ControlElement("lb", ElementType.BUTTON, Binding.LB, "LB", 0.08f, 0.10f, 0.08f),
-        ControlElement("start", ElementType.BUTTON, Binding.START, "PAUSA", 0.95f, 0.10f, 0.08f),
-        ControlElement("back", ElementType.BUTTON, Binding.BACK, "BACK", 0.20f, 0.10f, 0.08f, visible = false),
-        ControlElement("l3", ElementType.BUTTON, Binding.L3, "L3", 0.28f, 0.50f, 0.08f, visible = false),
-        ControlElement("rs", ElementType.STICK, Binding.RIGHT_STICK, "CÁMARA", 0.62f, 0.80f, 0.22f, visible = false),
-        ControlElement("gyro", ElementType.GYRO_TOGGLE, Binding.GYRO, "GIRO", 0.50f, 0.14f, 0.08f)
+        ControlElement("ls", ElementType.STICK, Binding.LEFT_STICK, "Mover", 0.15f, 0.72f, 0.26f, opacity = 0.35f),
+        // top row (system)
+        ControlElement("menu", ElementType.MENU, Binding.MENU, "Menú", 0.44f, 0.09f, 0.075f, opacity = 0.35f),
+        ControlElement("hide", ElementType.HIDE_UI, Binding.HIDE_UI, "Ocultar", 0.50f, 0.09f, 0.075f, opacity = 0.35f),
+        ControlElement("start", ElementType.BUTTON, Binding.START, "Pausa", 0.56f, 0.09f, 0.075f, opacity = 0.35f),
+        ControlElement("lb", ElementType.BUTTON, Binding.LB, "Objetivo", 0.62f, 0.09f, 0.075f, opacity = 0.35f),
+        // top-left: aim ; top-right: fire
+        ControlElement("lt", ElementType.TRIGGER, Binding.LT, "Apuntar", 0.18f, 0.16f, 0.15f, opacity = 0.35f),
+        ControlElement("rt", ElementType.TRIGGER, Binding.RT, "Disparar", 0.82f, 0.20f, 0.20f, opacity = 0.35f),
+        ControlElement("rt_l", ElementType.TRIGGER, Binding.RT, "Disparar", 0.06f, 0.42f, 0.11f, opacity = 0.35f),
+        // right cluster (actions)
+        ControlElement("dpad_up", ElementType.BUTTON, Binding.DPAD_UP, "Granada", 0.85f, 0.46f, 0.11f, opacity = 0.35f),
+        ControlElement("b", ElementType.BUTTON, Binding.B, "Golpe", 0.93f, 0.56f, 0.11f, opacity = 0.35f),
+        ControlElement("a", ElementType.BUTTON, Binding.A, "Cubrirse", 0.78f, 0.58f, 0.11f, opacity = 0.35f),
+        ControlElement("dpad", ElementType.DPAD, Binding.DPAD, "Armas", 0.70f, 0.68f, 0.13f, opacity = 0.35f),
+        ControlElement("rb", ElementType.BUTTON, Binding.RB, "Recargar", 0.78f, 0.78f, 0.11f, opacity = 0.35f),
+        ControlElement("x", ElementType.BUTTON, Binding.X, "Usar", 0.86f, 0.68f, 0.11f, opacity = 0.35f),
+        ControlElement("l3", ElementType.BUTTON, Binding.L3, "Agacharse", 0.93f, 0.80f, 0.10f, opacity = 0.35f),
+        ControlElement("r3", ElementType.BUTTON, Binding.R3, "Zoom", 0.93f, 0.38f, 0.09f, opacity = 0.35f),
+        // bottom center
+        ControlElement("y", ElementType.BUTTON, Binding.Y, "Mirar", 0.44f, 0.90f, 0.09f, opacity = 0.35f),
+        ControlElement("gyro", ElementType.GYRO_TOGGLE, Binding.GYRO, "Giro", 0.51f, 0.90f, 0.09f, opacity = 0.35f),
+        ControlElement("back", ElementType.BUTTON, Binding.BACK, "Back", 0.58f, 0.90f, 0.09f, opacity = 0.35f, visible = false),
+        ControlElement("rs", ElementType.STICK, Binding.RIGHT_STICK, "Cámara", 0.62f, 0.80f, 0.22f, visible = false)
     )
 
     /** Classic Xbox 360 pad layout. */

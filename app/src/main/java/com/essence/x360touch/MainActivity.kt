@@ -83,6 +83,7 @@ class MainActivity : Activity() {
         overlay = OverlayView(this).apply {
             elements = ControlLayout.fromJson(prefs.getString(K_LAYOUT, null)) ?: ControlLayout.default()
             onGyroToggle = { gyro.toggledOn = !gyro.toggledOn }
+            onMenu = { showMainMenu() }
             onSelectionChanged = { e -> syncOpacityBar(e) }
             lookEnabled = prefs.getBoolean(K_LOOK_ON, true)
             fireDragLook = prefs.getBoolean(K_FIRE_LOOK, true)
@@ -166,7 +167,7 @@ class MainActivity : Activity() {
         }
         root.addView(centerText, 0, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
 
-        menuButton = smallButton("☰  Menú") { showMainMenu() }
+        menuButton = smallButton("☰  Menú") { showMainMenu() }.apply { visibility = View.GONE }
         root.addView(menuButton, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = dp(4)
         })
@@ -224,7 +225,6 @@ class MainActivity : Activity() {
     private fun toggleEdit() {
         overlay.editMode = !overlay.editMode
         editButton.visibility = if (overlay.editMode) View.VISIBLE else View.GONE
-        menuButton.visibility = if (overlay.editMode) View.GONE else View.VISIBLE
         opacityRow.visibility = if (overlay.editMode) View.VISIBLE else View.GONE
         syncOpacityBar(null)
         if (!overlay.editMode) saveLayout()
@@ -551,7 +551,7 @@ class MainActivity : Activity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val K_LAYOUT = "layout_v2"
+        private const val K_LAYOUT = "layout_v3"
         private const val K_SHOW_DATA = "show_pad_data"
         private const val K_LOOK_ON = "look_on"
         private const val K_FIRE_LOOK = "look_fire_drag"

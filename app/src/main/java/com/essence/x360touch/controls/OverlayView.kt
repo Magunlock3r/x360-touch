@@ -35,6 +35,11 @@ class OverlayView(context: Context) : View(context) {
     var onStateChanged: ((GamepadState) -> Unit)? = null
     var onSelectionChanged: ((ControlElement?) -> Unit)? = null
     var onGyroToggle: (() -> Unit)? = null
+    var onMenu: (() -> Unit)? = null
+
+    /** Controls hidden by the eye button: touch keeps working, only drawing stops. */
+    var hudHidden: Boolean = false
+        set(value) { field = value; invalidate() }
 
     var editMode: Boolean = false
         set(value) {
@@ -88,6 +93,7 @@ class OverlayView(context: Context) : View(context) {
     private var dragOffsetX = 0f
     private var dragOffsetY = 0f
 
+    private val density = resources.displayMetrics.density
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -101,7 +107,7 @@ class OverlayView(context: Context) : View(context) {
     private val hint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
-        textSize = 14f * resources.displayMetrics.scaledDensity
+        textSize = 14f * resources.displayMetrics.density
     }
 
     private val scaleDetector = ScaleGestureDetector(context,
@@ -167,7 +173,12 @@ class OverlayView(context: Context) : View(context) {
                 if (e != null) {
                     grabbed[id] = e
                     positions[id] = PointF(x, y)
-                    if (e.type == ElementType.GYRO_TOGGLE) onGyroToggle?.invoke()
+                    when (e.type) {
+                        ElementType.GYRO_TOGGLE -> onGyroToggle?.invoke()
+                        ElementType.MENU -> onMenu?.invoke()
+                        ElementType.HIDE_UI -> hudHidden = !hudHidden
+                        else -> Unit
+                    }
                     if (e.type == ElementType.BUTTON || e.type == ElementType.TRIGGER) {
                         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     }
@@ -284,7 +295,7 @@ class OverlayView(context: Context) : View(context) {
                         if (ang > -157.5 && ang < -22.5) state.buttons = state.buttons or Buttons.DPAD_DOWN
                     }
                 }
-                ElementType.GYRO_TOGGLE -> Unit
+                ElementType.GYRO_TOGGLE, ElementType.MENU, ElementType.HIDE_UI -> Unit
             }
         }
         onStateChanged?.invoke(state)
@@ -298,6 +309,7 @@ class OverlayView(context: Context) : View(context) {
         val held = grabbed.values.toSet()
         for (e in elements) {
             if (!e.visible && !editMode) continue
+            if (hudHidden && !editMode && e.type != ElementType.HIDE_UI) continue
             val cx = centerX(e)
             val cy = centerY(e)
             val r = radius(e)
@@ -305,72 +317,72 @@ class OverlayView(context: Context) : View(context) {
             var a = e.opacity
             if (editMode) a = if (e.visible) a.coerceAtLeast(0.35f) else 0.15f
             val alpha = (a * 255).toInt().coerceIn(0, 255)
+            val lineAlpha = (alpha * 2.2f).toInt().coerceIn(0, 255)
+            val active = e.type == ElementType.GYRO_TOGGLE && gyroActive ||
+                e.type == ElementType.HIDE_UI && hudHidden
 
-            val base = when {
-                e.type == ElementType.GYRO_TOGGLE && gyroActive -> Color.rgb(40, 170, 90)
-                pressed -> Color.rgb(90, 90, 90)
-                else -> Color.rgb(25, 25, 25)
+            // HUD style: dark translucent disc, thin light outline, white line icon.
+            fill.color = when {
+                pressed -> Color.rgb(120, 140, 160)
+                active -> Color.rgb(40, 120, 170)
+                else -> Color.rgb(10, 14, 20)
             }
-            fill.color = base
-            fill.alpha = alpha
-            stroke.color = if (editMode && e == selected) Color.YELLOW
-                else if (e.binding == Binding.RT) Color.rgb(230, 80, 60) else accent(e)
-            stroke.alpha = if (editMode && e == selected) 255 else alpha
+            fill.alpha = if (pressed) (lineAlpha * 0.6f).toInt() else alpha
+            stroke.color = if (editMode && e == selected) Color.YELLOW else Color.rgb(225, 235, 245)
+            stroke.alpha = if (editMode && e == selected) 255 else lineAlpha
+            stroke.strokeWidth = (r * 0.045f).coerceIn(1.5f * density, 3f * density)
+            iconPaint.color = Color.WHITE
+            iconPaint.alpha = lineAlpha
+            iconPaint.strokeWidth = (r * 0.075f).coerceAtLeast(1.5f * density)
+
+            canvas.drawCircle(cx, cy, r, fill)
+            canvas.drawCircle(cx, cy, r, stroke)
 
             when (e.type) {
                 ElementType.STICK -> {
-                    canvas.drawCircle(cx, cy, r, fill)
-                    canvas.drawCircle(cx, cy, r, stroke)
                     val k = knobs[e.id]
                     val kx = cx + (k?.x ?: 0f) * r
                     val ky = cy + (k?.y ?: 0f) * r
-                    fill.color = Color.rgb(170, 170, 170)
-                    fill.alpha = alpha
-                    canvas.drawCircle(kx, ky, r * 0.42f, fill)
+                    canvas.drawCircle(kx, ky, r * 0.36f, stroke)
+                    drawIcon(canvas, Icon.MOVE, kx, ky, r * 0.16f)
                 }
                 ElementType.DPAD -> {
-                    canvas.drawCircle(cx, cy, r, fill)
-                    canvas.drawCircle(cx, cy, r, stroke)
-                    text.textSize = r * 0.45f
-                    text.alpha = alpha
-                    val o = r * 0.6f
-                    val dy = text.textSize / 3f
-                    canvas.drawText("▲", cx, cy - o + dy, text)
-                    canvas.drawText("▼", cx, cy + o + dy, text)
-                    canvas.drawText("◀", cx - o, cy + dy, text)
-                    canvas.drawText("▶", cx + o, cy + dy, text)
+                    // weapon selector: four small arrows + rifle in the middle
+                    val o = r * 0.62f
+                    drawIcon(canvas, Icon.ARROW_UP, cx, cy - o, r * 0.14f)
+                    drawIcon(canvas, Icon.ARROW_DOWN, cx, cy + o, r * 0.14f)
+                    drawIcon(canvas, Icon.ARROW_LEFT, cx - o, cy, r * 0.14f)
+                    drawIcon(canvas, Icon.ARROW_RIGHT, cx + o, cy, r * 0.14f)
+                    drawIcon(canvas, Icon.SWAP, cx, cy, r * 0.26f)
                 }
                 else -> {
-                    canvas.drawCircle(cx, cy, r, fill)
-                    canvas.drawCircle(cx, cy, r, stroke)
                     val icon = iconFor(e)
                     if (icon != null) {
-                        // Action icon with a small caption underneath (shooter layout).
-                        iconPaint.alpha = alpha
-                        iconPaint.strokeWidth = (r * 0.09f).coerceAtLeast(2f)
-                        drawIcon(canvas, icon, cx, cy - r * 0.14f, r * 0.42f)
-                        text.textSize = r * min(0.28f, 1.9f / e.label.length.coerceAtLeast(1))
-                        text.alpha = alpha
-                        canvas.drawText(e.label, cx, cy + r * 0.62f, text)
+                        drawIcon(canvas, icon, cx, cy, r * 0.46f)
                     } else {
                         text.textSize = r * min(0.75f, 2.4f / e.label.length.coerceAtLeast(1))
-                        text.alpha = alpha
+                        text.alpha = lineAlpha
                         canvas.drawText(e.label, cx, cy + text.textSize / 3f, text)
                     }
                 }
+            }
+            if (editMode && e.label.isNotEmpty()) {
+                text.textSize = (11f * density).coerceAtMost(r * 0.4f)
+                text.alpha = 255
+                canvas.drawText(e.label, cx, cy + r + text.textSize * 1.1f, text)
             }
         }
         if (editMode) {
             canvas.drawText(
                 "Arrastra para mover · Pellizca para cambiar tamaño · Toca un control para seleccionarlo",
-                width / 2f, height * 0.94f, hint
+                width / 2f, height * 0.97f, hint
             )
         }
     }
 
     // ---------- action icons (drawn with paths, no image files) ----------
 
-    private enum class Icon { FIRE, AIM, COVER, MELEE, RELOAD, USE, LOOK, ZOOM, PAUSE, GYRO }
+    private enum class Icon { FIRE, AIM, COVER, MELEE, RELOAD, USE, LOOK, ZOOM, PAUSE, GYRO, GRENADE, CROUCH, SWAP, MENU, EYE, MOVE, OBJECTIVE, ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT }
 
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -385,6 +397,11 @@ class OverlayView(context: Context) : View(context) {
     private fun iconFor(e: ControlElement): Icon? {
         if (e.label.length <= 2) return null
         return when (e.binding) {
+            Binding.DPAD_UP -> Icon.GRENADE
+            Binding.L3 -> Icon.CROUCH
+            Binding.MENU -> Icon.MENU
+            Binding.HIDE_UI -> Icon.EYE
+            Binding.LB -> Icon.OBJECTIVE
             Binding.RT -> Icon.FIRE
             Binding.LT -> Icon.AIM
             Binding.A -> Icon.COVER
@@ -405,15 +422,23 @@ class OverlayView(context: Context) : View(context) {
         val path = iconPath
         path.reset()
         when (icon) {
-            Icon.FIRE -> { // crosshair
-                c.drawCircle(x, y, s * 0.62f, p)
-                c.drawLine(x, y - s, x, y - s * 0.3f, p)
-                c.drawLine(x, y + s * 0.3f, x, y + s, p)
-                c.drawLine(x - s, y, x - s * 0.3f, y, p)
-                c.drawLine(x + s * 0.3f, y, x + s, y, p)
-                p.style = Paint.Style.FILL
-                c.drawCircle(x, y, s * 0.1f, p)
-                p.style = Paint.Style.STROKE
+            Icon.FIRE -> { // assault rifle silhouette (line art)
+                path.moveTo(x - s, y + s * 0.05f)          // muzzle
+                path.lineTo(x - s * 0.1f, y + s * 0.05f)
+                path.lineTo(x - s * 0.1f, y - s * 0.35f)   // top of receiver
+                path.lineTo(x + s * 0.75f, y - s * 0.35f)
+                path.lineTo(x + s * 0.95f, y - s * 0.15f)  // stock
+                path.lineTo(x + s * 0.95f, y + s * 0.3f)
+                path.lineTo(x + s * 0.7f, y + s * 0.3f)
+                path.lineTo(x + s * 0.6f, y + s * 0.05f)
+                path.lineTo(x + s * 0.35f, y + s * 0.05f)  // grip
+                path.lineTo(x + s * 0.25f, y + s * 0.6f)
+                path.lineTo(x + s * 0.05f, y + s * 0.6f)
+                path.lineTo(x + s * 0.1f, y + s * 0.05f)
+                path.lineTo(x - s * 0.1f, y + s * 0.05f)
+                c.drawPath(path, p)
+                c.drawLine(x - s * 0.5f, y + s * 0.05f, x - s * 0.55f, y + s * 0.4f, p) // foregrip
+                c.drawLine(x - s * 0.05f, y - s * 0.35f, x - s * 0.05f, y - s * 0.55f, p) // sight
             }
             Icon.AIM -> { // scope: circle + fine cross
                 c.drawCircle(x, y, s * 0.9f, p)
@@ -480,6 +505,67 @@ class OverlayView(context: Context) : View(context) {
                 c.drawLine(x - s * 0.35f, y - s * 0.7f, x - s * 0.35f, y + s * 0.7f, p)
                 c.drawLine(x + s * 0.35f, y - s * 0.7f, x + s * 0.35f, y + s * 0.7f, p)
             }
+            Icon.GRENADE -> {
+                iconRect.set(x - s * 0.6f, y - s * 0.45f, x + s * 0.6f, y + s)
+                c.drawOval(iconRect, p)
+                c.drawLine(x - s * 0.6f, y + s * 0.15f, x + s * 0.6f, y + s * 0.15f, p)
+                iconRect.set(x - s * 0.25f, y - s * 0.85f, x + s * 0.25f, y - s * 0.45f)
+                c.drawRoundRect(iconRect, s * 0.08f, s * 0.08f, p)
+                c.drawLine(x + s * 0.25f, y - s * 0.7f, x + s * 0.6f, y - s * 0.9f, p)
+            }
+            Icon.CROUCH -> { // crouching figure
+                c.drawCircle(x - s * 0.1f, y - s * 0.7f, s * 0.2f, p)
+                path.moveTo(x - s * 0.1f, y - s * 0.5f)
+                path.lineTo(x + s * 0.3f, y - s * 0.1f)
+                path.lineTo(x - s * 0.2f, y + s * 0.2f)
+                path.lineTo(x + s * 0.4f, y + s * 0.6f)
+                c.drawPath(path, p)
+                c.drawLine(x + s * 0.3f, y - s * 0.1f, x - s * 0.6f, y + s * 0.15f, p)
+                c.drawLine(x - s * 0.2f, y + s * 0.2f, x - s * 0.7f, y + s * 0.65f, p)
+            }
+            Icon.SWAP -> { // two opposite arrows
+                c.drawLine(x - s, y - s * 0.35f, x + s * 0.7f, y - s * 0.35f, p)
+                path.moveTo(x + s * 0.35f, y - s * 0.7f); path.lineTo(x + s * 0.75f, y - s * 0.35f); path.lineTo(x + s * 0.35f, y)
+                c.drawPath(path, p)
+                path.reset()
+                c.drawLine(x + s, y + s * 0.35f, x - s * 0.7f, y + s * 0.35f, p)
+                path.moveTo(x - s * 0.35f, y); path.lineTo(x - s * 0.75f, y + s * 0.35f); path.lineTo(x - s * 0.35f, y + s * 0.7f)
+                c.drawPath(path, p)
+            }
+            Icon.MENU -> { // gear
+                for (i in 0 until 8) {
+                    val a = Math.PI * 2 * i / 8
+                    c.drawLine(x + (s * 0.55f * Math.cos(a)).toFloat(), y + (s * 0.55f * Math.sin(a)).toFloat(),
+                        x + (s * 0.95f * Math.cos(a)).toFloat(), y + (s * 0.95f * Math.sin(a)).toFloat(), p)
+                }
+                c.drawCircle(x, y, s * 0.55f, p)
+                c.drawCircle(x, y, s * 0.2f, p)
+            }
+            Icon.EYE -> { // eye with a slash
+                path.moveTo(x - s, y)
+                path.quadTo(x, y - s * 1.1f, x + s, y)
+                path.quadTo(x, y + s * 1.1f, x - s, y)
+                path.close()
+                c.drawPath(path, p)
+                c.drawCircle(x, y, s * 0.3f, p)
+                c.drawLine(x - s * 0.8f, y + s * 0.8f, x + s * 0.8f, y - s * 0.8f, p)
+            }
+            Icon.MOVE -> { // small dot with four ticks
+                c.drawCircle(x, y, s * 0.35f, p)
+                c.drawLine(x, y - s, x, y - s * 0.65f, p)
+                c.drawLine(x, y + s * 0.65f, x, y + s, p)
+                c.drawLine(x - s, y, x - s * 0.65f, y, p)
+                c.drawLine(x + s * 0.65f, y, x + s, y, p)
+            }
+            Icon.OBJECTIVE -> { // list / tac-com
+                c.drawLine(x - s * 0.8f, y - s * 0.6f, x + s * 0.8f, y - s * 0.6f, p)
+                c.drawLine(x - s * 0.8f, y, x + s * 0.8f, y, p)
+                c.drawLine(x - s * 0.8f, y + s * 0.6f, x + s * 0.3f, y + s * 0.6f, p)
+            }
+            Icon.ARROW_UP -> { path.moveTo(x - s, y + s * 0.5f); path.lineTo(x, y - s * 0.5f); path.lineTo(x + s, y + s * 0.5f); c.drawPath(path, p) }
+            Icon.ARROW_DOWN -> { path.moveTo(x - s, y - s * 0.5f); path.lineTo(x, y + s * 0.5f); path.lineTo(x + s, y - s * 0.5f); c.drawPath(path, p) }
+            Icon.ARROW_LEFT -> { path.moveTo(x + s * 0.5f, y - s); path.lineTo(x - s * 0.5f, y); path.lineTo(x + s * 0.5f, y + s); c.drawPath(path, p) }
+            Icon.ARROW_RIGHT -> { path.moveTo(x - s * 0.5f, y - s); path.lineTo(x + s * 0.5f, y); path.lineTo(x - s * 0.5f, y + s); c.drawPath(path, p) }
             Icon.GYRO -> { // tilted phone with motion arcs
                 iconRect.set(x - s * 0.35f, y - s * 0.75f, x + s * 0.35f, y + s * 0.75f)
                 c.save()
