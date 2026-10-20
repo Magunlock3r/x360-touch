@@ -48,17 +48,17 @@ jobs:
           git push -f origin ci-log
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk X360Touch-${{ github.run_number }}.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Gears-${{ github.run_number }}.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: X360Touch-apk
-          path: X360Touch-${{ github.run_number }}.apk
+          name: Gears-apk
+          path: Gears-${{ github.run_number }}.apk
 
       # A release makes the APK downloadable from the phone without logging into Actions.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: X360 Touch build ${{ github.run_number }}
-          files: X360Touch-${{ github.run_number }}.apk
+          name: Gears build ${{ github.run_number }}
+          files: Gears-${{ github.run_number }}.apk
           make_latest: true

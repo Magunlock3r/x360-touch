@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.PointF
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -341,9 +343,20 @@ class OverlayView(context: Context) : View(context) {
                 else -> {
                     canvas.drawCircle(cx, cy, r, fill)
                     canvas.drawCircle(cx, cy, r, stroke)
-                    text.textSize = r * min(0.75f, 2.4f / e.label.length.coerceAtLeast(1))
-                    text.alpha = alpha
-                    canvas.drawText(e.label, cx, cy + text.textSize / 3f, text)
+                    val icon = iconFor(e)
+                    if (icon != null) {
+                        // Action icon with a small caption underneath (shooter layout).
+                        iconPaint.alpha = alpha
+                        iconPaint.strokeWidth = (r * 0.09f).coerceAtLeast(2f)
+                        drawIcon(canvas, icon, cx, cy - r * 0.14f, r * 0.42f)
+                        text.textSize = r * min(0.28f, 1.9f / e.label.length.coerceAtLeast(1))
+                        text.alpha = alpha
+                        canvas.drawText(e.label, cx, cy + r * 0.62f, text)
+                    } else {
+                        text.textSize = r * min(0.75f, 2.4f / e.label.length.coerceAtLeast(1))
+                        text.alpha = alpha
+                        canvas.drawText(e.label, cx, cy + text.textSize / 3f, text)
+                    }
                 }
             }
         }
@@ -352,6 +365,131 @@ class OverlayView(context: Context) : View(context) {
                 "Arrastra para mover · Pellizca para cambiar tamaño · Toca un control para seleccionarlo",
                 width / 2f, height * 0.94f, hint
             )
+        }
+    }
+
+    // ---------- action icons (drawn with paths, no image files) ----------
+
+    private enum class Icon { FIRE, AIM, COVER, MELEE, RELOAD, USE, LOOK, ZOOM, PAUSE, GYRO }
+
+    private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val iconPath = Path()
+    private val iconRect = RectF()
+
+    /** Only action-named controls (shooter layout) get icons; letter buttons keep their letter. */
+    private fun iconFor(e: ControlElement): Icon? {
+        if (e.label.length <= 2) return null
+        return when (e.binding) {
+            Binding.RT -> Icon.FIRE
+            Binding.LT -> Icon.AIM
+            Binding.A -> Icon.COVER
+            Binding.B -> Icon.MELEE
+            Binding.RB -> Icon.RELOAD
+            Binding.X -> Icon.USE
+            Binding.Y -> Icon.LOOK
+            Binding.R3 -> Icon.ZOOM
+            Binding.START -> Icon.PAUSE
+            Binding.GYRO -> Icon.GYRO
+            else -> null
+        }
+    }
+
+    /** Draws [icon] centered at (x, y) inside a box of half-size [s]. */
+    private fun drawIcon(c: Canvas, icon: Icon, x: Float, y: Float, s: Float) {
+        val p = iconPaint
+        val path = iconPath
+        path.reset()
+        when (icon) {
+            Icon.FIRE -> { // crosshair
+                c.drawCircle(x, y, s * 0.62f, p)
+                c.drawLine(x, y - s, x, y - s * 0.3f, p)
+                c.drawLine(x, y + s * 0.3f, x, y + s, p)
+                c.drawLine(x - s, y, x - s * 0.3f, y, p)
+                c.drawLine(x + s * 0.3f, y, x + s, y, p)
+                p.style = Paint.Style.FILL
+                c.drawCircle(x, y, s * 0.1f, p)
+                p.style = Paint.Style.STROKE
+            }
+            Icon.AIM -> { // scope: circle + fine cross
+                c.drawCircle(x, y, s * 0.9f, p)
+                c.drawLine(x - s * 0.9f, y, x + s * 0.9f, y, p)
+                c.drawLine(x, y - s * 0.9f, x, y + s * 0.9f, p)
+                c.drawCircle(x, y, s * 0.3f, p)
+            }
+            Icon.COVER -> { // shield
+                path.moveTo(x, y - s)
+                path.lineTo(x + s * 0.85f, y - s * 0.65f)
+                path.lineTo(x + s * 0.75f, y + s * 0.2f)
+                path.quadTo(x + s * 0.5f, y + s * 0.75f, x, y + s)
+                path.quadTo(x - s * 0.5f, y + s * 0.75f, x - s * 0.75f, y + s * 0.2f)
+                path.lineTo(x - s * 0.85f, y - s * 0.65f)
+                path.close()
+                c.drawPath(path, p)
+            }
+            Icon.MELEE -> { // impact burst
+                val n = 8
+                for (i in 0 until n * 2) {
+                    val a = Math.PI * i / n - Math.PI / 2
+                    val rr = if (i % 2 == 0) s else s * 0.45f
+                    val px = x + (rr * Math.cos(a)).toFloat()
+                    val py = y + (rr * Math.sin(a)).toFloat()
+                    if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+                }
+                path.close()
+                c.drawPath(path, p)
+            }
+            Icon.RELOAD -> { // circular arrow
+                iconRect.set(x - s * 0.8f, y - s * 0.8f, x + s * 0.8f, y + s * 0.8f)
+                c.drawArc(iconRect, -60f, 300f, false, p)
+                val ax = x + s * 0.4f
+                val ay = y - s * 0.69f
+                path.moveTo(ax - s * 0.35f, ay - s * 0.3f)
+                path.lineTo(ax + s * 0.05f, ay)
+                path.lineTo(ax - s * 0.3f, ay + s * 0.35f)
+                c.drawPath(path, p)
+            }
+            Icon.USE -> { // hand pointing up (simplified): arrow into a box
+                iconRect.set(x - s * 0.8f, y - s * 0.1f, x + s * 0.8f, y + s * 0.9f)
+                c.drawRoundRect(iconRect, s * 0.15f, s * 0.15f, p)
+                c.drawLine(x, y + s * 0.5f, x, y - s, p)
+                path.moveTo(x - s * 0.35f, y - s * 0.6f)
+                path.lineTo(x, y - s)
+                path.lineTo(x + s * 0.35f, y - s * 0.6f)
+                c.drawPath(path, p)
+            }
+            Icon.LOOK -> { // eye
+                path.moveTo(x - s, y)
+                path.quadTo(x, y - s * 1.1f, x + s, y)
+                path.quadTo(x, y + s * 1.1f, x - s, y)
+                path.close()
+                c.drawPath(path, p)
+                c.drawCircle(x, y, s * 0.3f, p)
+            }
+            Icon.ZOOM -> { // magnifier with +
+                c.drawCircle(x - s * 0.2f, y - s * 0.2f, s * 0.6f, p)
+                c.drawLine(x + s * 0.25f, y + s * 0.25f, x + s * 0.9f, y + s * 0.9f, p)
+                c.drawLine(x - s * 0.5f, y - s * 0.2f, x + s * 0.1f, y - s * 0.2f, p)
+                c.drawLine(x - s * 0.2f, y - s * 0.5f, x - s * 0.2f, y + s * 0.1f, p)
+            }
+            Icon.PAUSE -> {
+                c.drawLine(x - s * 0.35f, y - s * 0.7f, x - s * 0.35f, y + s * 0.7f, p)
+                c.drawLine(x + s * 0.35f, y - s * 0.7f, x + s * 0.35f, y + s * 0.7f, p)
+            }
+            Icon.GYRO -> { // tilted phone with motion arcs
+                iconRect.set(x - s * 0.35f, y - s * 0.75f, x + s * 0.35f, y + s * 0.75f)
+                c.save()
+                c.rotate(-20f, x, y)
+                c.drawRoundRect(iconRect, s * 0.12f, s * 0.12f, p)
+                c.restore()
+                iconRect.set(x - s, y - s, x + s, y + s)
+                c.drawArc(iconRect, 200f, 50f, false, p)
+                c.drawArc(iconRect, 20f, 50f, false, p)
+            }
         }
     }
 

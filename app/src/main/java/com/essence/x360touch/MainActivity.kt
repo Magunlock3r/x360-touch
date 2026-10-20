@@ -14,6 +14,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.Button
@@ -44,6 +45,9 @@ class MainActivity : Activity() {
     private lateinit var editButton: Button
     private lateinit var opacityRow: LinearLayout
     private lateinit var opacityBar: SeekBar
+    private lateinit var menuButton: Button
+    private lateinit var centerText: TextView
+    private var showPadData: Boolean = false
     private lateinit var gameFile: GameFile
 
     /** Game shown in the HUD, e.g. "Gears of War.iso (6.8 GB) ✓". */
@@ -86,7 +90,11 @@ class MainActivity : Activity() {
         gyro.isAiming = { overlay.state.lt > 0.5f }
         gyro.rotation = { currentRotation() }
 
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        showPadData = prefs.getBoolean(K_SHOW_DATA, false)
         setContentView(buildUi())
+        hud.visibility = if (showPadData) View.VISIBLE else View.GONE
+        updateCenterText()
         gameFile.savedUri?.let { loadGameInfo(it) }
     }
 
@@ -150,19 +158,21 @@ class MainActivity : Activity() {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(18, 22, 28)) }
         root.addView(overlay, FrameLayout.LayoutParams(MATCH, MATCH))
 
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Game screen placeholder: the engine renders here once the port runs.
+        centerText = TextView(this).apply {
+            setTextColor(Color.argb(150, 255, 255, 255))
+            textSize = 16f
             gravity = Gravity.CENTER
         }
-        editButton = smallButton("Editar") { toggleEdit() }
-        bar.addView(smallButton("Juego") { pickGame() })
-        bar.addView(editButton)
-        bar.addView(smallButton("Cámara") { showLookDialog() })
-        bar.addView(smallButton("Giroscopio") { showGyroDialog() })
-        bar.addView(smallButton("Cheats") { showCheatsDialog() })
-        bar.addView(smallButton("Distribución") { confirmReset() })
-        root.addView(bar, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-            topMargin = dp(36)
+        root.addView(centerText, 0, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+
+        menuButton = smallButton("☰  Menú") { showMainMenu() }
+        root.addView(menuButton, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = dp(4)
+        })
+        editButton = smallButton("✓  Listo") { toggleEdit() }.apply { visibility = View.GONE }
+        root.addView(editButton, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = dp(4)
         })
 
         opacityBar = SeekBar(this).apply {
@@ -190,7 +200,7 @@ class MainActivity : Activity() {
             addView(smallButton("Ocultar/Mostrar") { toggleSelectedVisibility() })
         }
         root.addView(opacityRow, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-            topMargin = dp(80)
+            topMargin = dp(52)
         })
 
         hud = TextView(this).apply {
@@ -213,7 +223,8 @@ class MainActivity : Activity() {
 
     private fun toggleEdit() {
         overlay.editMode = !overlay.editMode
-        editButton.text = if (overlay.editMode) "Listo" else "Editar"
+        editButton.visibility = if (overlay.editMode) View.VISIBLE else View.GONE
+        menuButton.visibility = if (overlay.editMode) View.GONE else View.VISIBLE
         opacityRow.visibility = if (overlay.editMode) View.VISIBLE else View.GONE
         syncOpacityBar(null)
         if (!overlay.editMode) saveLayout()
@@ -330,6 +341,46 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // ---------- menu ----------
+
+    private fun showMainMenu() {
+        val items = arrayOf(
+            "Cargar juego (ISO o carpeta)",
+            "Editar botones",
+            "Distribución de botones",
+            "Cámara táctil",
+            "Giroscopio",
+            "Cheats",
+            if (showPadData) "Ocultar datos del mando" else "Mostrar datos del mando"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Gears")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> pickGame()
+                    1 -> toggleEdit()
+                    2 -> confirmReset()
+                    3 -> showLookDialog()
+                    4 -> showGyroDialog()
+                    5 -> showCheatsDialog()
+                    6 -> {
+                        showPadData = !showPadData
+                        prefs.edit().putBoolean(K_SHOW_DATA, showPadData).apply()
+                        hud.visibility = if (showPadData) View.VISIBLE else View.GONE
+                    }
+                }
+            }
+            .setOnDismissListener { hideSystemBars() }
+            .show()
+    }
+
+    private fun updateCenterText() {
+        centerText.text = if (gameFile.savedUri == null)
+            "GEARS\n\nCarga tu juego desde ☰ Menú → Cargar juego"
+        else
+            "GEARS\n\n$gameLabel\n\nMotor del juego en desarrollo: los controles ya funcionan"
+    }
+
     // ---------- game file ----------
 
     private fun pickGame() {
@@ -385,6 +436,7 @@ class MainActivity : Activity() {
                         else -> " ✗ no es ISO de Xbox 360"
                     }
                 }
+                updateCenterText()
                 if (showResult) showGameDialog(info)
             }
         }
@@ -500,6 +552,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val K_LAYOUT = "layout_v2"
+        private const val K_SHOW_DATA = "show_pad_data"
         private const val K_LOOK_ON = "look_on"
         private const val K_FIRE_LOOK = "look_fire_drag"
         private const val K_LOOK_SENS = "look_sens"
