@@ -28,7 +28,24 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee build.log
+
+      # Saves the build log to the ci-log branch so it can be read through the API.
+      - name: Publish build log
+        if: always()
+        run: |
+          [ -f build.log ] || exit 0
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          mkdir -p /tmp/ci && cp build.log /tmp/ci/build.log
+          git checkout --orphan ci-log
+          git rm -rfq . || true
+          cp /tmp/ci/build.log build.log
+          git add build.log
+          git commit -qm "build log ${{ github.run_number }}"
+          git push -f origin ci-log
 
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk X360Touch-${{ github.run_number }}.apk
