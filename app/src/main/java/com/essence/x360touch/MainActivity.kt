@@ -138,9 +138,9 @@ class MainActivity : Activity() {
                 override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
                     if (!fromUser) return
                     val v = (p + 5) / 100f
-                    val sel = overlay.selected
-                    if (sel != null) sel.opacity = v else overlay.elements.forEach { it.opacity = v }
-                    overlay.invalidate()
+                    val sel = this@MainActivity.overlay.selected
+                    if (sel != null) sel.opacity = v else this@MainActivity.overlay.elements.forEach { it.opacity = v }
+                    this@MainActivity.overlay.invalidate()
                 }
                 override fun onStartTrackingTouch(sb: SeekBar) = Unit
                 override fun onStopTrackingTouch(sb: SeekBar) = Unit
