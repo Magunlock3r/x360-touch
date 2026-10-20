@@ -37,7 +37,31 @@ object ControlLayout {
     const val MIN_SIZE = 0.05f
     const val MAX_SIZE = 0.55f
 
-    fun default(): MutableList<ControlElement> = mutableListOf(
+    /** Shooter layout (like PUBG Mobile) with Gears of War actions. Every control stays editable. */
+    fun default(): MutableList<ControlElement> = shooter()
+
+    fun shooter(): MutableList<ControlElement> = mutableListOf(
+        ControlElement("ls", ElementType.STICK, Binding.LEFT_STICK, "MOVER", 0.14f, 0.68f, 0.32f),
+        ControlElement("rt", ElementType.TRIGGER, Binding.RT, "DISPARAR", 0.86f, 0.60f, 0.18f),
+        ControlElement("rt_l", ElementType.TRIGGER, Binding.RT, "DISPARAR", 0.08f, 0.30f, 0.11f),
+        ControlElement("lt", ElementType.TRIGGER, Binding.LT, "APUNTAR", 0.95f, 0.36f, 0.12f),
+        ControlElement("a", ElementType.BUTTON, Binding.A, "CUBRIRSE", 0.72f, 0.84f, 0.13f),
+        ControlElement("b", ElementType.BUTTON, Binding.B, "GOLPE", 0.95f, 0.82f, 0.11f),
+        ControlElement("rb", ElementType.BUTTON, Binding.RB, "RECARGAR", 0.70f, 0.56f, 0.10f),
+        ControlElement("x", ElementType.BUTTON, Binding.X, "USAR", 0.58f, 0.42f, 0.10f),
+        ControlElement("y", ElementType.BUTTON, Binding.Y, "MIRAR", 0.80f, 0.18f, 0.09f),
+        ControlElement("r3", ElementType.BUTTON, Binding.R3, "ZOOM", 0.68f, 0.26f, 0.08f),
+        ControlElement("dpad", ElementType.DPAD, Binding.DPAD, "", 0.32f, 0.88f, 0.17f),
+        ControlElement("lb", ElementType.BUTTON, Binding.LB, "LB", 0.08f, 0.10f, 0.08f),
+        ControlElement("start", ElementType.BUTTON, Binding.START, "PAUSA", 0.95f, 0.10f, 0.08f),
+        ControlElement("back", ElementType.BUTTON, Binding.BACK, "BACK", 0.20f, 0.10f, 0.08f, visible = false),
+        ControlElement("l3", ElementType.BUTTON, Binding.L3, "L3", 0.28f, 0.50f, 0.08f, visible = false),
+        ControlElement("rs", ElementType.STICK, Binding.RIGHT_STICK, "CÁMARA", 0.62f, 0.80f, 0.22f, visible = false),
+        ControlElement("gyro", ElementType.GYRO_TOGGLE, Binding.GYRO, "GIRO", 0.50f, 0.14f, 0.08f)
+    )
+
+    /** Classic Xbox 360 pad layout. */
+    fun xboxPad(): MutableList<ControlElement> = mutableListOf(
         ControlElement("ls", ElementType.STICK, Binding.LEFT_STICK, "LS", 0.14f, 0.70f, 0.30f),
         ControlElement("rs", ElementType.STICK, Binding.RIGHT_STICK, "RS", 0.66f, 0.80f, 0.22f),
         ControlElement("dpad", ElementType.DPAD, Binding.DPAD, "", 0.32f, 0.86f, 0.18f),

@@ -160,7 +160,7 @@ class MainActivity : Activity() {
         bar.addView(smallButton("Cámara") { showLookDialog() })
         bar.addView(smallButton("Giroscopio") { showGyroDialog() })
         bar.addView(smallButton("Cheats") { showCheatsDialog() })
-        bar.addView(smallButton("Restablecer") { confirmReset() })
+        bar.addView(smallButton("Distribución") { confirmReset() })
         root.addView(bar, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = dp(36)
         })
@@ -234,13 +234,18 @@ class MainActivity : Activity() {
 
     private fun confirmReset() {
         AlertDialog.Builder(this)
-            .setTitle("Restablecer controles")
-            .setMessage("¿Volver a la posición y tamaño originales de todos los botones?")
-            .setPositiveButton("Restablecer") { _, _ ->
-                overlay.elements = ControlLayout.default()
+            .setTitle("Distribución de botones")
+            .setMessage("Elige una distribución. Reemplaza la posición y el tamaño actuales de los botones.")
+            .setPositiveButton("Shooter (tipo PUBG)") { _, _ ->
+                overlay.elements = ControlLayout.shooter()
+                saveLayout()
+            }
+            .setNeutralButton("Mando Xbox") { _, _ ->
+                overlay.elements = ControlLayout.xboxPad()
                 saveLayout()
             }
             .setNegativeButton("Cancelar", null)
+            .setOnDismissListener { hideSystemBars() }
             .show()
     }
 
@@ -328,9 +333,27 @@ class MainActivity : Activity() {
     // ---------- game file ----------
 
     private fun pickGame() {
+        AlertDialog.Builder(this)
+            .setTitle("Cargar juego")
+            .setMessage("Actual: $gameLabel")
+            .setPositiveButton("Archivo ISO") { _, _ -> pickIso() }
+            .setNeutralButton("Carpeta (extraído)") { _, _ -> pickFolder() }
+            .setNegativeButton("Cancelar", null)
+            .setOnDismissListener { hideSystemBars() }
+            .show()
+    }
+
+    private fun pickIso() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        runCatching { startActivityForResult(i, REQ_GAME) }
+    }
+
+    private fun pickFolder() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
         runCatching { startActivityForResult(i, REQ_GAME) }
@@ -356,7 +379,11 @@ class MainActivity : Activity() {
                     gameFile.forget()
                 } else {
                     val gb = if (info.sizeBytes > 0) String.format(" (%.1f GB)", info.sizeBytes / 1e9) else ""
-                    gameLabel = info.name + gb + if (info.validXbox360) " ✓" else " ✗ no es ISO de Xbox 360"
+                    gameLabel = info.name + gb + when {
+                        info.validXbox360 -> " ✓"
+                        info.isFolder -> " ✗ no tiene default.xex"
+                        else -> " ✗ no es ISO de Xbox 360"
+                    }
                 }
                 if (showResult) showGameDialog(info)
             }
@@ -366,6 +393,9 @@ class MainActivity : Activity() {
     private fun showGameDialog(info: GameFile.Info?) {
         val msg = when {
             info == null -> "No se pudo leer el archivo. Vuelve a elegirlo."
+            info.validXbox360 && info.isFolder -> "${info.name}\n\nCarpeta de juego válida (contiene default.xex). Ruta guardada.\n\n" +
+                "Nota: esta app es la capa de controles; el juego se ejecutará cuando el port del motor esté listo."
+            info.isFolder -> "${info.name}\n\nEsta carpeta no tiene default.xex. Elige la carpeta raíz del juego extraído."
             info.validXbox360 -> "${info.name}\n\nISO de Xbox 360 válido. Ruta guardada: se recordará al reabrir la app.\n\n" +
                 "Nota: esta app es la capa de controles; el juego se ejecutará cuando el port del motor esté listo."
             else -> "${info.name}\n\nNo tiene la firma de un disco de Xbox 360. Elige el .iso del juego."
@@ -469,7 +499,7 @@ class MainActivity : Activity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val K_LAYOUT = "layout_v1"
+        private const val K_LAYOUT = "layout_v2"
         private const val K_LOOK_ON = "look_on"
         private const val K_FIRE_LOOK = "look_fire_drag"
         private const val K_LOOK_SENS = "look_sens"

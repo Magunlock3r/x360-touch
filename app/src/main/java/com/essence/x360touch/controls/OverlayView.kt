@@ -311,7 +311,8 @@ class OverlayView(context: Context) : View(context) {
             }
             fill.color = base
             fill.alpha = alpha
-            stroke.color = if (editMode && e == selected) Color.YELLOW else accent(e)
+            stroke.color = if (editMode && e == selected) Color.YELLOW
+                else if (e.binding == Binding.RT) Color.rgb(230, 80, 60) else accent(e)
             stroke.alpha = if (editMode && e == selected) 255 else alpha
 
             when (e.type) {
@@ -340,7 +341,7 @@ class OverlayView(context: Context) : View(context) {
                 else -> {
                     canvas.drawCircle(cx, cy, r, fill)
                     canvas.drawCircle(cx, cy, r, stroke)
-                    text.textSize = (r * if (e.label.length > 2) 0.42f else 0.75f)
+                    text.textSize = r * min(0.75f, 2.4f / e.label.length.coerceAtLeast(1))
                     text.alpha = alpha
                     canvas.drawText(e.label, cx, cy + text.textSize / 3f, text)
                 }

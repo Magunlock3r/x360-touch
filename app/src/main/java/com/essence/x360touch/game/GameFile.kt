@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -14,7 +15,14 @@ import java.nio.ByteBuffer
  */
 class GameFile(private val resolver: ContentResolver, private val prefs: SharedPreferences) {
 
-    data class Info(val uri: Uri, val name: String, val sizeBytes: Long, val validXbox360: Boolean)
+    /** [isFolder]: extracted game (folder with default.xex) instead of an ISO. */
+    data class Info(
+        val uri: Uri,
+        val name: String,
+        val sizeBytes: Long,
+        val validXbox360: Boolean,
+        val isFolder: Boolean = false
+    )
 
     val savedUri: Uri?
         get() = prefs.getString(K_URI, null)?.let(Uri::parse)
@@ -39,7 +47,31 @@ class GameFile(private val resolver: ContentResolver, private val prefs: SharedP
     }
 
     /** Reads name, size and checks the Xbox 360 disc signature. Blocking: call off the main thread. */
-    fun inspect(uri: Uri): Info? = runCatching {
+    fun inspect(uri: Uri): Info? =
+        if (DocumentsContract.isTreeUri(uri)) inspectFolder(uri) else inspectIso(uri)
+
+    /** An extracted Xbox 360 game is a folder with default.xex at its root. */
+    private fun inspectFolder(tree: Uri): Info? = runCatching {
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        val rootDoc = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+        var name = rootId.substringAfterLast(':').substringAfterLast('/').ifEmpty { "carpeta" }
+        resolver.query(rootDoc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0)?.let { name = it } }
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, rootId)
+        var hasXex = false
+        resolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)
+            ?.use { c ->
+                while (c.moveToNext()) {
+                    if (c.getString(0).equals("default.xex", ignoreCase = true)) {
+                        hasXex = true
+                        break
+                    }
+                }
+            }
+        Info(tree, name, -1L, hasXex, isFolder = true)
+    }.getOrNull()
+
+    private fun inspectIso(uri: Uri): Info? = runCatching {
         var name = uri.lastPathSegment ?: "juego.iso"
         var size = -1L
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
