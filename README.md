@@ -6,6 +6,8 @@ Capa de controles táctiles para el port de Gears of War (Xbox 360) en Android. 
 - **Gamepad virtual completo de Xbox 360**: 2 sticks, D-pad, A/B/X/Y, LB/RB, LT/RT, START/BACK, L3/R3. Multitáctil.
 - **Editor de layout**: "Editar" → arrastra para mover, pellizca para cambiar tamaño, ajusta opacidad y oculta o muestra cada control. Se guarda automáticamente.
 - **Giroscopio**: apuntar moviendo el teléfono. Modos: apagado / siempre / solo con LT (apuntar) / con el botón GIRO. Sensibilidad 0.1–4.0 e inversión de ejes. Se suma al stick derecho.
+- **Cámara táctil (estilo PUBG)**: desliza en la parte derecha de la pantalla, fuera de los botones, para mover la cámara. También se mueve arrastrando el botón de disparo (RT). Tiene sensibilidad e inversión vertical.
+- **Ruta del juego**: el botón "Juego" abre el selector de archivos para elegir el `.iso`; verifica la firma de disco Xbox 360 y recuerda la ruta.
 - **Cheats**: menú con activar/desactivar; los valores se reaplican en cada frame. Se definen en `app/src/main/assets/cheats.json`.
 - HUD con el estado del mando en tiempo real, para comprobar que todo responde.
 

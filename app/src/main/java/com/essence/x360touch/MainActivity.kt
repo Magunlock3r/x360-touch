@@ -3,8 +3,10 @@ package com.essence.x360touch
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
+import android.graphics.PointF
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -28,7 +30,9 @@ import com.essence.x360touch.controls.ControlElement
 import com.essence.x360touch.controls.ControlLayout
 import com.essence.x360touch.controls.GamepadState
 import com.essence.x360touch.controls.OverlayView
+import com.essence.x360touch.game.GameFile
 import com.essence.x360touch.gyro.GyroAim
+import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
 
@@ -40,6 +44,14 @@ class MainActivity : Activity() {
     private lateinit var editButton: Button
     private lateinit var opacityRow: LinearLayout
     private lateinit var opacityBar: SeekBar
+    private lateinit var gameFile: GameFile
+
+    /** Game shown in the HUD, e.g. "Gears of War.iso (6.8 GB) ✓". */
+    private var gameLabel: String = "ningún juego"
+    private val lookDelta = PointF()
+
+    private var lookSens: Float = 1.0f
+    private var lookInvertY: Boolean = false
 
     private val output = GamepadState()
     private val handler = Handler(Looper.getMainLooper())
@@ -59,17 +71,23 @@ class MainActivity : Activity() {
         prefs = getSharedPreferences("x360touch", Context.MODE_PRIVATE)
 
         gyro = GyroAim(this, prefs)
+        gameFile = GameFile(contentResolver, prefs)
+        lookSens = prefs.getFloat(K_LOOK_SENS, 1.0f)
+        lookInvertY = prefs.getBoolean(K_LOOK_INV_Y, false)
         cheats = CheatManager(this, prefs)
 
         overlay = OverlayView(this).apply {
             elements = ControlLayout.fromJson(prefs.getString(K_LAYOUT, null)) ?: ControlLayout.default()
             onGyroToggle = { gyro.toggledOn = !gyro.toggledOn }
             onSelectionChanged = { e -> syncOpacityBar(e) }
+            lookEnabled = prefs.getBoolean(K_LOOK_ON, true)
+            fireDragLook = prefs.getBoolean(K_FIRE_LOOK, true)
         }
         gyro.isAiming = { overlay.state.lt > 0.5f }
         gyro.rotation = { currentRotation() }
 
         setContentView(buildUi())
+        gameFile.savedUri?.let { loadGameInfo(it) }
     }
 
     override fun onResume() {
@@ -95,6 +113,18 @@ class MainActivity : Activity() {
 
     private fun composeFrame() {
         output.copyFrom(overlay.state)
+
+        // Swipe-to-look: finger speed (dp per frame) becomes right-stick deflection.
+        overlay.consumeLook(lookDelta)
+        if (lookDelta.x != 0f || lookDelta.y != 0f) {
+            val d = resources.displayMetrics.density
+            val k = 0.08f * lookSens
+            var y = -(lookDelta.y / d) * k
+            if (lookInvertY) y = -y
+            output.rx = (output.rx + (lookDelta.x / d) * k).coerceIn(-1f, 1f)
+            output.ry = (output.ry + y).coerceIn(-1f, 1f)
+        }
+
         val active = gyro.isActive()
         if (active) {
             output.rx = (output.rx + gyro.outX).coerceIn(-1f, 1f)
@@ -107,7 +137,8 @@ class MainActivity : Activity() {
 
     private fun showHud(s: GamepadState) {
         hud.text = String.format(
-            "Botones 0x%04X   LS %+.2f %+.2f   RS %+.2f %+.2f   LT %.0f%%  RT %.0f%%   Giro %s",
+            "Juego: %s\nBotones 0x%04X   LS %+.2f %+.2f   RS %+.2f %+.2f   LT %.0f%%  RT %.0f%%   Giro %s",
+            gameLabel,
             s.buttons, s.lx, s.ly, s.rx, s.ry, s.lt * 100, s.rt * 100,
             if (!gyro.available) "no disponible" else if (gyro.isActive()) "ON" else "off"
         )
@@ -124,7 +155,9 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
         editButton = smallButton("Editar") { toggleEdit() }
+        bar.addView(smallButton("Juego") { pickGame() })
         bar.addView(editButton)
+        bar.addView(smallButton("Cámara") { showLookDialog() })
         bar.addView(smallButton("Giroscopio") { showGyroDialog() })
         bar.addView(smallButton("Cheats") { showCheatsDialog() })
         bar.addView(smallButton("Restablecer") { confirmReset() })
@@ -292,6 +325,119 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // ---------- game file ----------
+
+    private fun pickGame() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        runCatching { startActivityForResult(i, REQ_GAME) }
+    }
+
+    @Deprecated("Activity API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_GAME || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        gameFile.remember(uri)
+        loadGameInfo(uri, showResult = true)
+    }
+
+    private fun loadGameInfo(uri: android.net.Uri, showResult: Boolean = false) {
+        gameLabel = "comprobando…"
+        thread(name = "game-inspect") {
+            val info = gameFile.inspect(uri)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (info == null) {
+                    gameLabel = "no se pudo leer el archivo"
+                    gameFile.forget()
+                } else {
+                    val gb = if (info.sizeBytes > 0) String.format(" (%.1f GB)", info.sizeBytes / 1e9) else ""
+                    gameLabel = info.name + gb + if (info.validXbox360) " ✓" else " ✗ no es ISO de Xbox 360"
+                }
+                if (showResult) showGameDialog(info)
+            }
+        }
+    }
+
+    private fun showGameDialog(info: GameFile.Info?) {
+        val msg = when {
+            info == null -> "No se pudo leer el archivo. Vuelve a elegirlo."
+            info.validXbox360 -> "${info.name}\n\nISO de Xbox 360 válido. Ruta guardada: se recordará al reabrir la app.\n\n" +
+                "Nota: esta app es la capa de controles; el juego se ejecutará cuando el port del motor esté listo."
+            else -> "${info.name}\n\nNo tiene la firma de un disco de Xbox 360. Elige el .iso del juego."
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Juego")
+            .setMessage(msg)
+            .setPositiveButton("OK", null)
+            .setOnDismissListener { hideSystemBars() }
+            .show()
+    }
+
+    // ---------- swipe camera ----------
+
+    private fun showLookDialog() {
+        val pad = dp(20)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        box.addView(TextView(this).apply {
+            text = "Desliza el dedo en la parte derecha de la pantalla (fuera de los botones) para mover la cámara, como en PUBG."
+        })
+        box.addView(CheckBox(this).apply {
+            text = "Cámara con deslizamiento"
+            isChecked = this@MainActivity.overlay.lookEnabled
+            setOnCheckedChangeListener { _, c ->
+                this@MainActivity.overlay.lookEnabled = c
+                prefs.edit().putBoolean(K_LOOK_ON, c).apply()
+            }
+        })
+        box.addView(CheckBox(this).apply {
+            text = "Mover la cámara arrastrando el botón de disparo (RT)"
+            isChecked = this@MainActivity.overlay.fireDragLook
+            setOnCheckedChangeListener { _, c ->
+                this@MainActivity.overlay.fireDragLook = c
+                prefs.edit().putBoolean(K_FIRE_LOOK, c).apply()
+            }
+        })
+        val label = TextView(this)
+        fun update() { label.text = String.format("Sensibilidad: %.1f", lookSens) }
+        update()
+        box.addView(label)
+        box.addView(SeekBar(this).apply {
+            max = 39
+            progress = ((lookSens * 10).toInt() - 1).coerceIn(0, 39)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
+                    lookSens = (p + 1) / 10f
+                    prefs.edit().putFloat(K_LOOK_SENS, lookSens).apply()
+                    update()
+                }
+                override fun onStartTrackingTouch(sb: SeekBar) = Unit
+                override fun onStopTrackingTouch(sb: SeekBar) = Unit
+            })
+        })
+        box.addView(CheckBox(this).apply {
+            text = "Invertir vertical"
+            isChecked = lookInvertY
+            setOnCheckedChangeListener { _, c ->
+                lookInvertY = c
+                prefs.edit().putBoolean(K_LOOK_INV_Y, c).apply()
+            }
+        })
+        AlertDialog.Builder(this)
+            .setTitle("Cámara táctil")
+            .setView(box)
+            .setPositiveButton("Listo", null)
+            .setOnDismissListener { hideSystemBars() }
+            .show()
+    }
+
     // ---------- helpers ----------
 
     private fun saveLayout() {
@@ -324,6 +470,11 @@ class MainActivity : Activity() {
 
     companion object {
         private const val K_LAYOUT = "layout_v1"
+        private const val K_LOOK_ON = "look_on"
+        private const val K_FIRE_LOOK = "look_fire_drag"
+        private const val K_LOOK_SENS = "look_sens"
+        private const val K_LOOK_INV_Y = "look_inv_y"
+        private const val REQ_GAME = 1001
         private const val FRAME_MS = 16L
         private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT

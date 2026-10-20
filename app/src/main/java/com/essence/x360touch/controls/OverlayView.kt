@@ -63,6 +63,24 @@ class OverlayView(context: Context) : View(context) {
     // stick id -> knob offset (-1..1, screen coordinates) for drawing
     private val knobs = HashMap<String, PointF>()
 
+    /** Swipe-to-look (PUBG style): a finger on empty screen, right of [lookZoneStart], moves the camera. */
+    var lookEnabled: Boolean = true
+    /** Fraction of the width where the look zone starts (0.4 = right 60% of the screen). */
+    var lookZoneStart: Float = 0.4f
+    /** Dragging while holding RT (fire) also moves the camera, like the fire button in mobile shooters. */
+    var fireDragLook: Boolean = true
+    private var lookPointer = -1
+    private val lookLast = PointF()
+    private var lookDx = 0f
+    private var lookDy = 0f
+
+    /** Pixels moved by look fingers since the last call; resets the accumulator. */
+    fun consumeLook(out: PointF) {
+        out.set(lookDx, lookDy)
+        lookDx = 0f
+        lookDy = 0f
+    }
+
     // edit-mode drag
     private var dragPointer = -1
     private var dragOffsetX = 0f
@@ -140,6 +158,10 @@ class OverlayView(context: Context) : View(context) {
                 val x = ev.getX(i)
                 val y = ev.getY(i)
                 val e = hitTest(x, y)
+                if (e == null && lookEnabled && lookPointer == -1 && x >= width * lookZoneStart) {
+                    lookPointer = id
+                    lookLast.set(x, y)
+                }
                 if (e != null) {
                     grabbed[id] = e
                     positions[id] = PointF(x, y)
@@ -152,17 +174,31 @@ class OverlayView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until ev.pointerCount) {
                     val id = ev.getPointerId(i)
-                    positions[id]?.set(ev.getX(i), ev.getY(i))
+                    val x = ev.getX(i)
+                    val y = ev.getY(i)
+                    if (id == lookPointer) {
+                        lookDx += x - lookLast.x
+                        lookDy += y - lookLast.y
+                        lookLast.set(x, y)
+                    }
+                    val p = positions[id]
+                    if (p != null && fireDragLook && lookEnabled && grabbed[id]?.binding == Binding.RT) {
+                        lookDx += x - p.x
+                        lookDy += y - p.y
+                    }
+                    p?.set(x, y)
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val id = ev.getPointerId(ev.actionIndex)
                 grabbed.remove(id)
                 positions.remove(id)
+                if (id == lookPointer) lookPointer = -1
             }
             MotionEvent.ACTION_CANCEL -> {
                 grabbed.clear()
                 positions.clear()
+                lookPointer = -1
             }
         }
         recompute()
@@ -201,6 +237,9 @@ class OverlayView(context: Context) : View(context) {
     private fun releaseAll() {
         grabbed.clear()
         positions.clear()
+        lookPointer = -1
+        lookDx = 0f
+        lookDy = 0f
         knobs.clear()
         state.reset()
         onStateChanged?.invoke(state)
